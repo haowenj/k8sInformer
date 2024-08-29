@@ -46,7 +46,7 @@ func main() {
 
 	//启动虚拟机Informer
 	vmInformer := factory.VirtualMachine()
-	//获取所有的pod数据
+	//启动pod Informer
 	allPodInformer := factory.PortionPods()
 
 	//运行所有的Informer
