@@ -1,0 +1,11 @@
+# nonk8s
+apiVersion: apps.newcrd.com/v1beta1
+kind: NewDep
+metadata:
+  labels:
+    app.kubernetes.io/name: new-crd
+    app.kubernetes.io/managed-by: kustomize
+  name: newdep-sample
+spec:
+  image: nginx:alpine
+  replica: 2
