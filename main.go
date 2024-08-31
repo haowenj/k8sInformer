@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/haowenj/newcrd-api/api/v1beta1"
 	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
@@ -47,7 +48,9 @@ func main() {
 	//启动虚拟机Informer
 	vmInformer := factory.VirtualMachine()
 	//启动pod Informer
-	allPodInformer := factory.PortionPods()
+	podInformer := factory.PortionPods()
+	//启动newCrd Informer
+	newcrdInformer := factory.NewCrd()
 
 	//运行所有的Informer
 	factory.Start(ctx.Done())
@@ -56,7 +59,8 @@ func main() {
 
 	//使用Informer处理业务逻辑，logger.WithName方法会返回一个全新的logger实例，并且打印的日志内容会加上Name前缀
 	go runVmInformer(vmInformer, logger.WithName("vm informer"))
-	go runAllPodInformer(allPodInformer, logger.WithName("pod informer"))
+	go runAPodInformer(podInformer, logger.WithName("pod informer"))
+	go runNewcrdInformer(newcrdInformer, logger.WithName("newdep informer"))
 
 	quit := make(chan os.Signal)
 	signal.Notify(quit, os.Interrupt)
@@ -111,10 +115,12 @@ func runVmInformer(informer cache.SharedIndexInformer, logs logr.Logger) {
 	wait.Until(fun, time.Hour, ctx.Done())
 }
 
-func runAllPodInformer(informer cache.SharedIndexInformer, logs logr.Logger) {
+func runAPodInformer(informer cache.SharedIndexInformer, logs logr.Logger) {
 	//list
 	fun := func() {
 		objs := informer.GetStore().List()
+		//pod在本项目中有两个Informer，一个是获取全量Informer的，为了防止启动时输出大量pod数据，限制只输出5个，另一个是根据标签筛选后的Informer，可以忽略下方这个逻辑，当然标签筛选后也可能
+		//会有很多数据，防止启动时打印太多数据，应用于实际开发中时要删除这个逻辑。
 		if len(objs) > 5 {
 			objs = objs[:5]
 		}
@@ -125,6 +131,22 @@ func runAllPodInformer(informer cache.SharedIndexInformer, logs logr.Logger) {
 				return
 			}
 			logs.Info("pod info", pod.Namespace, pod.Name)
+		}
+	}
+	wait.Until(fun, time.Hour, ctx.Done())
+}
+
+func runNewcrdInformer(informer cache.SharedIndexInformer, logs logr.Logger) {
+	//list
+	fun := func() {
+		objs := informer.GetStore().List()
+		for _, obj := range objs {
+			newdep, ok := obj.(*v1beta1.NewDep)
+			if !ok {
+				logs.Error(nil, "unexpected type: %T", obj)
+				return
+			}
+			logs.Info("newdep info", newdep.Namespace, newdep.Name)
 		}
 	}
 	wait.Until(fun, time.Hour, ctx.Done())

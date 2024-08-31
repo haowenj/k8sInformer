@@ -3,15 +3,15 @@ package informerfactory
 import (
 	"context"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"sync"
 	"time"
 
-	zvirt "kube-informer/informerfactory/kubevirt"
-
 	"github.com/go-logr/logr"
+	"github.com/haowenj/newcrd-api/api/v1beta1"
 	k8sv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -20,6 +20,9 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	virtv1 "kubevirt.io/api/core/v1"
+
+	zvirt "kube-informer/informerfactory/kubevirt"
+	"kube-informer/informerfactory/newdep"
 )
 
 var (
@@ -87,7 +90,9 @@ func (f *InformerFactory) WaitForCacheSync(stopCh <-chan struct{}) {
 }
 
 func (f *InformerFactory) VirtualMachine() cache.SharedIndexInformer {
-	restClient, _ := rest.RESTClientFor(f.resetvmK8sConf())
+	groupVersion := &virtv1.StorageGroupVersion
+	groupVersion.Version = virtv1.ApiLatestVersion
+	restClient, _ := rest.RESTClientFor(f.resetK8sConf(groupVersion, zvirt.Codecs))
 	return f.getInformer("vmInformer", func() cache.SharedIndexInformer {
 		lw := cache.NewListWatchFromClient(restClient, "virtualmachines", k8sv1.NamespaceAll, fields.Everything())
 		return cache.NewSharedIndexInformer(lw, &virtv1.VirtualMachine{}, f.defaultResync, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
@@ -114,13 +119,20 @@ func (f *InformerFactory) PortionPods() cache.SharedIndexInformer {
 	})
 }
 
-// 重置k8s配置信息，用于初始化kubevirt的Informer的restClient
-func (c *InformerFactory) resetvmK8sConf() *rest.Config {
+// NewCrd 获取自己开发的自定义资源newcrd的Informer
+func (f *InformerFactory) NewCrd() cache.SharedIndexInformer {
+	restClient, _ := rest.RESTClientFor(f.resetK8sConf(&v1beta1.GroupVersion, newdep.Codecs))
+	return f.getInformer("newcrdInformer", func() cache.SharedIndexInformer {
+		lw := cache.NewListWatchFromClient(restClient, "newdeps", k8sv1.NamespaceAll, fields.Everything())
+		return cache.NewSharedIndexInformer(lw, &v1beta1.NewDep{}, f.defaultResync, cache.Indexers{})
+	})
+}
+
+// 重置k8si信息，用于初始化每个自定义资源的Informer的restclinet
+func (c *InformerFactory) resetK8sConf(gv *schema.GroupVersion, codecs serializer.CodecFactory) *rest.Config {
 	shallowCopy := *c.k8sConfig
-	groupVersion := &virtv1.StorageGroupVersion
-	groupVersion.Version = virtv1.ApiLatestVersion
-	shallowCopy.GroupVersion = groupVersion
-	shallowCopy.NegotiatedSerializer = serializer.WithoutConversionCodecFactory{CodecFactory: zvirt.Codecs}
+	shallowCopy.GroupVersion = gv
+	shallowCopy.NegotiatedSerializer = serializer.WithoutConversionCodecFactory{CodecFactory: codecs}
 	shallowCopy.APIPath = "/apis"
 	shallowCopy.ContentType = runtime.ContentTypeJSON
 	return &shallowCopy
