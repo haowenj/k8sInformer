@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"k8s.io/client-go/kubernetes"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/haowenj/newcrd-api/api/v1beta1"
 	k8sv1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
@@ -60,7 +62,7 @@ func main() {
 	//使用Informer处理业务逻辑，logger.WithName方法会返回一个全新的logger实例，并且打印的日志内容会加上Name前缀
 	go runVmInformer(vmInformer, logger.WithName("vm informer"))
 	go runAPodInformer(podInformer, logger.WithName("pod informer"))
-	go runNewcrdInformer(newcrdInformer, logger.WithName("newdep informer"))
+	go runNewcrdInformer(newcrdInformer, factory.ClientSet(), logger.WithName("newdep informer"))
 
 	quit := make(chan os.Signal)
 	signal.Notify(quit, os.Interrupt)
@@ -136,7 +138,7 @@ func runAPodInformer(informer cache.SharedIndexInformer, logs logr.Logger) {
 	wait.Until(fun, time.Hour, ctx.Done())
 }
 
-func runNewcrdInformer(informer cache.SharedIndexInformer, logs logr.Logger) {
+func runNewcrdInformer(informer cache.SharedIndexInformer, clientSet *kubernetes.Clientset, logs logr.Logger) {
 	//list
 	fun := func() {
 		objs := informer.GetStore().List()
@@ -147,6 +149,19 @@ func runNewcrdInformer(informer cache.SharedIndexInformer, logs logr.Logger) {
 				return
 			}
 			logs.Info("newdep info", newdep.Namespace, newdep.Name)
+			//根据父级cr查询所管理的pod，父级查pod只能通过标签的方式，但是pod对象里有个pod.GetOwnerReferences()方法，可以直接查pod属于谁管理。
+			selector := metav1.LabelSelector{MatchLabels: map[string]string{"app": newdep.Name}}
+			pods, err := clientSet.CoreV1().Pods(newdep.Namespace).List(ctx, metav1.ListOptions{LabelSelector: metav1.FormatLabelSelector(&selector)})
+			if err != nil {
+				logs.Error(err, "get pod list")
+				return
+			}
+			for _, pod := range pods.Items {
+				for _, owner := range pod.GetOwnerReferences() {
+					logs.Info("owner", "name", owner.Name)
+				}
+				logs.Info("pod info", pod.Namespace, pod.Name)
+			}
 		}
 	}
 	wait.Until(fun, time.Hour, ctx.Done())

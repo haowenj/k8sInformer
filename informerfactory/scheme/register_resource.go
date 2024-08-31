@@ -1,4 +1,4 @@
-package newdep
+package newScheme
 
 import (
 	"fmt"
@@ -8,6 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
+	virtv1 "kubevirt.io/api/core/v1"
 )
 
 var (
@@ -27,5 +28,7 @@ func init() {
 	Codecs = serializer.NewCodecFactory(Scheme)
 	utilruntime.Must(v1beta1.AddToScheme(Scheme))
 	utilruntime.Must(v1beta1.AddToScheme(scheme.Scheme))
-	fmt.Println("*********** newdep client go scheme ***********")
+	utilruntime.Must(virtv1.AddToScheme(Scheme))
+	utilruntime.Must(virtv1.AddToScheme(scheme.Scheme))
+	fmt.Println("*********** register client go scheme ***********")
 }
