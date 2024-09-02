@@ -17,11 +17,12 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	virtv1 "kubevirt.io/api/core/v1"
 
-	zscheme "kube-informer/informerfactory/scheme"
+	_ "kube-informer/informerfactory/scheme"
 )
 
 var (
@@ -95,7 +96,7 @@ func (f *InformerFactory) ClientSet() *kubernetes.Clientset {
 func (f *InformerFactory) VirtualMachine() cache.SharedIndexInformer {
 	groupVersion := &virtv1.StorageGroupVersion
 	groupVersion.Version = virtv1.ApiLatestVersion
-	restClient, _ := rest.RESTClientFor(f.resetK8sConf(groupVersion, zscheme.Codecs))
+	restClient, _ := rest.RESTClientFor(f.resetK8sConf(groupVersion, scheme.Codecs))
 	return f.getInformer("vmInformer", func() cache.SharedIndexInformer {
 		lw := cache.NewListWatchFromClient(restClient, "virtualmachines", k8sv1.NamespaceAll, fields.Everything())
 		return cache.NewSharedIndexInformer(lw, &virtv1.VirtualMachine{}, f.defaultResync, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
@@ -124,7 +125,7 @@ func (f *InformerFactory) PortionPods() cache.SharedIndexInformer {
 
 // NewCrd 获取自己开发的自定义资源newcrd的Informer
 func (f *InformerFactory) NewCrd() cache.SharedIndexInformer {
-	restClient, _ := rest.RESTClientFor(f.resetK8sConf(&v1beta1.GroupVersion, zscheme.Codecs))
+	restClient, _ := rest.RESTClientFor(f.resetK8sConf(&v1beta1.GroupVersion, scheme.Codecs))
 	return f.getInformer("newcrdInformer", func() cache.SharedIndexInformer {
 		lw := cache.NewListWatchFromClient(restClient, "newdeps", k8sv1.NamespaceAll, fields.Everything())
 		return cache.NewSharedIndexInformer(lw, &v1beta1.NewDep{}, f.defaultResync, cache.Indexers{})
