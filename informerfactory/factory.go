@@ -2,6 +2,8 @@ package informerfactory
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
@@ -99,6 +101,7 @@ func (f *InformerFactory) VirtualMachine() cache.SharedIndexInformer {
 	restClient, _ := rest.RESTClientFor(f.resetK8sConf(groupVersion, scheme.Codecs))
 	return f.getInformer("vmInformer", func() cache.SharedIndexInformer {
 		lw := cache.NewListWatchFromClient(restClient, "virtualmachines", k8sv1.NamespaceAll, fields.Everything())
+		//cache.Indexers参数的作用：informer.GetIndexer().ByIndex(cache.NamespaceIndex, "ucan-161")，可以根据命名空间的名字筛选数据
 		return cache.NewSharedIndexInformer(lw, &virtv1.VirtualMachine{}, f.defaultResync, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 	})
 }
@@ -106,6 +109,31 @@ func (f *InformerFactory) VirtualMachine() cache.SharedIndexInformer {
 // AllPods 用于获取所有pod数据时使用的Informer
 func (f *InformerFactory) AllPods() cache.SharedIndexInformer {
 	return f.factory.Core().V1().Pods().Informer()
+}
+
+// AllPodsUseCustomIndexer 使用Indexer筛选缓存中的pod数据
+func (f *InformerFactory) AllPodsUseCustomIndexer() cache.SharedIndexInformer {
+	return f.getInformer("indexerPods", func() cache.SharedIndexInformer {
+		lw := cache.NewListWatchFromClient(f.clientSet.CoreV1().RESTClient(), "pods", k8sv1.NamespaceAll, fields.Everything())
+		//自定义Indexer的类型是一个字符串，加一个func(obj interface{}) ([]string, error)类型的函数，字符串就是Indexer的名称，根据这个名称就可以使用这个索引。
+		//函数里的逻辑就是把缓存的数据按照一个维度进行分组，同时也可以筛选过滤掉一些数据，返回的字符串类型的切片，每个元素都是一个类似自定义的主键然后可以索引到背后的一个资源对象，这里是pod对象。
+		return cache.NewSharedIndexInformer(lw, &k8sv1.Pod{}, f.defaultResync, cache.Indexers{
+			cache.NamespaceIndex: cache.MetaNamespaceIndexFunc,
+			"prometheus": func(obj interface{}) ([]string, error) {
+				pod, ok := obj.(*k8sv1.Pod)
+				if !ok {
+					return []string{}, errors.New("invalid pod object")
+				}
+				var pods []string
+				//这里以Prometheus的pod为例，先筛选所有存在app.kubernetes.io/part-of标签的pod，然后再根据app.kubernetes.io/component标签进行分组，用app.kubernetes.io/component=exporter的值
+				//取不同的数据，在加上命名空间，用/连接。
+				if _, ok := pod.GetLabels()["app.kubernetes.io/part-of"]; ok {
+					pods = append(pods, fmt.Sprintf("%s/%s", pod.GetLabels()["app.kubernetes.io/component"], pod.Namespace))
+				}
+				return pods, nil
+			},
+		})
+	})
 }
 
 // PortionPods 部分pod数据，根据标签筛选，跟AllPods选择使用，筛选数据的Informer需要自己实现listwatch接口才行

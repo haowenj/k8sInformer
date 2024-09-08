@@ -51,6 +51,8 @@ func main() {
 	vmInformer := factory.VirtualMachine()
 	//启动pod Informer
 	podInformer := factory.PortionPods()
+	//启动带有自定义Indexer的pod Informer
+	indexerPodInformer := factory.AllPodsUseCustomIndexer()
 	//启动newCrd Informer
 	newcrdInformer := factory.NewCrd()
 
@@ -61,6 +63,8 @@ func main() {
 
 	//使用Informer处理业务逻辑，logger.WithName方法会返回一个全新的logger实例，并且打印的日志内容会加上Name前缀
 	go runVmInformer(vmInformer, logger.WithName("vm informer"))
+	go runVmInformerUseIndexer(vmInformer, logger.WithName("vm informer use-indexer"))
+	go runPodInformerUseIndexer(indexerPodInformer, logger.WithName("pod informer use-indexer"))
 	go runAPodInformer(podInformer, logger.WithName("pod informer"))
 	go runNewcrdInformer(newcrdInformer, factory.ClientSet(), logger.WithName("newdep informer"))
 
@@ -115,6 +119,41 @@ func runVmInformer(informer cache.SharedIndexInformer, logs logr.Logger) {
 		}
 	}
 	wait.Until(fun, time.Hour, ctx.Done())
+}
+
+func runVmInformerUseIndexer(informer cache.SharedIndexInformer, logs logr.Logger) {
+	//创建Informer的时候，传入的indexer参数的作用是把缓存的数据组建一个索引，根据索引可以从缓存数据里检索自己想要的数据，Informer默认提供了一个namespace的indexer，他的作用是按照命名空间建立索引，然后传入命名空间
+	//就可以筛选指定命名空间下的数据，他跟自定义listwatch方法，自定标签筛选监听和缓存数据的区别是，前者数据仍然是全量的，只是缓存后再进行数据筛选，后者是直接在缓存和监听数据时就已经做了数据的筛选。
+	objs, err := informer.GetIndexer().ByIndex(cache.NamespaceIndex, "ucan-161")
+	if err != nil {
+		logs.Error(err, "get indexer error")
+		return
+	}
+	for _, obj := range objs {
+		vm, ok := obj.(*v1.VirtualMachine)
+		if !ok {
+			logs.Error(nil, "unexpected type: %T", obj)
+			continue
+		}
+		logs.Info("vm info:", vm.Namespace, vm.Name)
+	}
+}
+
+func runPodInformerUseIndexer(informer cache.SharedIndexInformer, logs logr.Logger) {
+	//使用自定义Indexer,prometheus是创建Informer时是指定的Indexer的名字，值是kube-Prometheus项目部署时，依据组建名称打的不同的标签值然后加上命名空间
+	objs, err := informer.GetIndexer().ByIndex("prometheus", "prometheus/monitoring")
+	if err != nil {
+		logs.Error(err, "get indexer error")
+		return
+	}
+	for key, obj := range objs {
+		pod, ok := obj.(*k8sv1.Pod)
+		if !ok {
+			logs.Error(nil, "unexpected type: %T", obj)
+			continue
+		}
+		logs.Info("pod info:", "key", key, pod.Namespace, pod.Name)
+	}
 }
 
 func runAPodInformer(informer cache.SharedIndexInformer, logs logr.Logger) {
