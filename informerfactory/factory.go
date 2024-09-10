@@ -118,6 +118,7 @@ func (f *InformerFactory) AllPodsUseCustomIndexer() cache.SharedIndexInformer {
 		//自定义Indexer的类型是一个字符串，加一个func(obj interface{}) ([]string, error)类型的函数，字符串就是Indexer的名称，根据这个名称就可以使用这个索引。
 		//函数里的逻辑就是把缓存的数据按照一个维度进行分组，同时也可以筛选过滤掉一些数据，返回的字符串类型的切片，每个元素都是一个类似自定义的主键然后可以索引到背后的一个资源对象，这里是pod对象。
 		return cache.NewSharedIndexInformer(lw, &k8sv1.Pod{}, f.defaultResync, cache.Indexers{
+			//自带的基于namespace/name的索引器
 			cache.NamespaceIndex: cache.MetaNamespaceIndexFunc,
 			"prometheus": func(obj interface{}) ([]string, error) {
 				pod, ok := obj.(*k8sv1.Pod)
@@ -127,7 +128,7 @@ func (f *InformerFactory) AllPodsUseCustomIndexer() cache.SharedIndexInformer {
 				var pods []string
 				//这里以Prometheus的pod为例，先筛选所有存在app.kubernetes.io/part-of标签的pod，然后再根据app.kubernetes.io/component标签进行分组，用app.kubernetes.io/component=exporter的值
 				//取不同的数据，在加上命名空间，用/连接。
-				if _, ok := pod.GetLabels()["app.kubernetes.io/part-of"]; ok {
+				if _, ok := pod.GetLabels()["app.kubernetes.io/part-of"]; ok && pod.Namespace == "monitoring" {
 					pods = append(pods, fmt.Sprintf("%s/%s", pod.GetLabels()["app.kubernetes.io/component"], pod.Namespace))
 				}
 				return pods, nil

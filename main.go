@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"k8s.io/client-go/kubernetes"
 	"os"
 	"os/signal"
@@ -145,6 +146,19 @@ func runPodInformerUseIndexer(informer cache.SharedIndexInformer, logs logr.Logg
 	if err != nil {
 		logs.Error(err, "get indexer error")
 		return
+	}
+	//ListIndexFuncValues方法传入一个索引器的名字，返回的是这个索引器下的所有的索引值
+	for key, val := range informer.GetIndexer().ListIndexFuncValues("prometheus") {
+		fmt.Printf("ListIndexFuncValues: %v: %v\n", key, val)
+	}
+	//GetIndexers方法获取Informer里所有的索引器以及对应的函数
+	for key, val := range informer.GetIndexer().GetIndexers() {
+		fmt.Printf("GetIndexers: %v: %v\n", key, val)
+	}
+	//IndexKeys方法获取根据索引器以及索引值获得的资源的key，而不是具体的资源对象
+	keys, _ := informer.GetIndexer().IndexKeys("prometheus", "prometheus/monitoring")
+	for key, val := range keys {
+		fmt.Printf("IndexKeys: %v: %v\n", key, val)
 	}
 	for key, obj := range objs {
 		pod, ok := obj.(*k8sv1.Pod)
